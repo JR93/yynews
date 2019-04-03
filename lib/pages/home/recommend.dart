@@ -1,26 +1,53 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:yynews/model/news_data.dart';
 import 'package:yynews/model/api.dart';
-import 'dart:convert';
+import 'package:yynews/pages/common/loading.dart';
+import 'package:yynews/pages/common/news_item.dart';
+import 'package:yynews/pages/common/web_page.dart';
 
 class Recommend extends StatefulWidget {
   @override
   _RecommendState createState() => new _RecommendState();
 }
 
-class _RecommendState extends State<Recommend> {
+/* AutomaticKeepAliveClientMixin: 避免tabview切换重绘 */
+class _RecommendState extends State<Recommend> with AutomaticKeepAliveClientMixin {
+  ScrollController _scrollController = new ScrollController(); // 滚动监听
+  List<Data> lists = []; // 存储列表数据
   final int pageSize = 10;
   int offset = 0;
-  List data = [];
-  Future<List<Data>> futureInstance;
+  bool isLoading = true; // 是否加载中
+  bool isComplete = false; // 是否加载完了
   
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   void initState() {
     super.initState();
-    futureInstance = _loadData();
+    // 初始化加载
+    _loadMoreData();
+    // 监听滚动到底部加载
+    _scrollController.addListener((){
+      if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 30) {
+        if (!isComplete && !isLoading) {
+          _loadMoreData();
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    // 销毁，避免内存泄漏
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<List<Data>> _loadData() async {
+    print('当前索引位置：$offset');
     Map<String, dynamic> res = await Api.get(Api.RECOMMEND, params: {
       "appId": "1004",
       "data": jsonEncode({
@@ -32,159 +59,214 @@ class _RecommendState extends State<Recommend> {
     return newsData.result.retData.data??<Data>[];
   }
 
-  Future refresh() async {
+  void _loadMoreData() async {
     setState(() {
-      futureInstance = _loadData();
+      isLoading = true;
     });
+    List<Data> data = await _loadData();
+    if (!mounted) {
+      return;
+    }
+    print('长度：${data.length}');
+    // 有数据
+    if (data.length > 0) {
+      // 有下页
+      if (data.length >= 10) {
+        setState(() {
+          offset += pageSize;
+          isLoading = false;
+        });
+      } else {
+        setState(() {
+          isLoading = false;
+          isComplete = true;
+        });
+      }
+      setState(() {
+        lists.addAll(data);
+      });
+    } else {
+      // over
+      setState(() {
+        isLoading = false;
+        isComplete = true;
+      });
+    }
+    print('总长度：${lists.length}');
+  }
+
+  Future _refresh() async {
+    setState(() {
+      isComplete = false;
+      offset = 0;
+      lists.clear();
+    });
+    _loadMoreData();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<Data>>(
-      future: futureInstance,
-      builder: (BuildContext context, AsyncSnapshot<List<Data>> snapshot) {
-        if (snapshot.connectionState == ConnectionState.active || snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: CircularProgressIndicator(
-              // valueColor: AlwaysStoppedAnimation<Color>(Color.fromARGB(255, 255, 221, 0)),
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: lists.length > 0 ?
+        _buildListView(context, lists) :
+        Container(
+          child: (isComplete && offset == 0) ?
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                RaisedButton(
+                  onPressed: (){
+                    setState(() {
+                      isComplete = false;
+                    });
+                    _loadMoreData();
+                  },
+                  child: Text('点击刷新'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 5.0),
+                  child: Text('暂无数据~', style: TextStyle(color: Colors.grey),),
+                ),
+              ],
+            ) :
+            Center(
+              child: CircularProgressIndicator(),
             ),
-          );
-        }
-        if (snapshot.connectionState == ConnectionState.done) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text("ERROR"),
-            );
-          } else if (snapshot.hasData) {
-            List<Data> list = snapshot.data;
-            return RefreshIndicator(
-              // color: Color.fromARGB(255, 255, 221, 0),
-              child: buildListView(context, list),
-              onRefresh: refresh
-            );
-          }
-        }
-      },
+        ),
     );
   }
 
-  Widget buildListView(BuildContext context, List<Data> list) {
+  Widget _buildListView(BuildContext context, List<Data> lists) {
     return Container(
       decoration: BoxDecoration(
         color: Color.fromARGB(255, 244, 244, 244)
       ),
       child: ListView.builder(
+        controller: _scrollController,
         physics: AlwaysScrollableScrollPhysics(),
-        itemCount: list.length,
+        itemCount: lists.length + 1,
         itemBuilder: (BuildContext context, int index) {
-          Data item = list[index];
-          return Container(
-            margin: const EdgeInsets.only(top: 5.0),
-            padding: const EdgeInsets.fromLTRB(10.0, 5.0, 5.0, 5.0),
-            color: Colors.white,
-            child: Row(
+          if (index == lists.length) {
+            // 用于展示加载loading或者完成提示
+            if (isComplete) {
+              return LoadingCompleteIndicator();
+            } else {
+              return LoadingIndicator(isLoading: isLoading);
+            }
+          } else {
+            Data item = lists[index];
+            return Container(
+              margin: const EdgeInsets.only(top: 5.0),
+              padding: const EdgeInsets.all(5.0),
+              color: Colors.white,
+              child: InkWell(
+                onTap: () {
+                  Navigator.push(context, CupertinoPageRoute(
+                    builder: (context) {
+                      return WebPage(
+                        url: 'https://web.yy.com/myue/article.html?aid=${item.messageId}',
+                      ); // 跳转详情页
+                    }
+                  ));
+                },
+                child:
+                  item.messageType == 1 ?
+                  _listViewStyle1(item) :
+                  item.messageType == 2 ?
+                  _listViewStyle2(item) :
+                  _listViewStyle3(item),
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _listViewStyle1(Data item) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: <Widget>[
+        Expanded(
+          flex: 1,
+          child: Container(
+            height: 84.0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: <Widget>[
-                Expanded(
-                  flex: 1,
-                  child: Container(
-                    height: 76.0,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: <Widget>[
-                        Text(
-                          item.title,
-                          style: TextStyle(
-                            color: Color.fromARGB(255, 29, 29, 29),
-                            fontSize: 11.0
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: true,
-                          textScaleFactor: 1.5,
-                        ),
-                        Row(
-                          children: <Widget>[
-                            Container(
-                              padding: const EdgeInsets.only(right: 5.0),
-                              height: 20.0,
-                              decoration: BoxDecoration(
-                                color: Color.fromARGB(255, 245, 245, 245),
-                                borderRadius: BorderRadius.circular(10.0)
-                              ),
-                              child: Row(
-                                children: <Widget>[
-                                  CircleAvatar(
-                                    backgroundColor: Colors.grey[200],
-                                    backgroundImage: NetworkImage(item.anchorLogo),
-                                    radius: 10.0,
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 5.0),
-                                    child: Text(
-                                      item.anchorName,
-                                      style: TextStyle(
-                                        fontSize: 12.0,
-                                        color: Color.fromARGB(255, 153, 153, 153)
-                                      ),
-                                    ),
-                                  )
-                                ],
-                              ),
-                            ),
-                            Container(
-                              margin: const EdgeInsets.only(left: 10.0),
-                              padding: const EdgeInsets.fromLTRB(8.0, 0, 8.0, 0),
-                              height: 20.0,
-                              decoration: BoxDecoration(
-                                color: Color.fromARGB(255, 245, 245, 245),
-                                borderRadius: BorderRadius.circular(10.0)
-                              ),
-                              child: Text(
-                                item.topicName,
-                                style: TextStyle(
-                                  fontSize: 12.0,
-                                  color: Color.fromARGB(255, 153, 153, 153)
-                                ),
-                              ),
-                            ),
-                            Container(
-                              margin: const EdgeInsets.only(left: 10.0),
-                              child: Row(
-                                children: <Widget>[
-                                  Icon(Icons.remove_red_eye, color: Color.fromARGB(160, 153, 153, 153), size: 12.0),
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 2.0),
-                                    child: Text(
-                                      '${item.readCount}',
-                                      style: TextStyle(
-                                        fontSize: 12.0,
-                                        color: Color.fromARGB(255, 153, 153, 153)
-                                      ),
-                                    ),
-                                  )
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                NewsTitle(
+                  title: item.title,
+                  maxLines: 2,
                 ),
-                Container(
-                  width: 118.0,
-                  height: 86.0,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200]
-                  ),
-                  child: Image.network(item.cover[0], width: 118.0, height: 86.0, fit: BoxFit.cover),
-                )
+                NewsInfo(data: item),
               ],
             ),
-          );
-        },
+          ),
+        ),
+        NewsCover(cover: item.cover[0])
+      ],
+    );
+  }
+
+  Widget _listViewStyle2(Data item) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          NewsTitle(
+            title: item.title,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0.0, 10.0, 0.0, 12.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: item.cover.map((cover) => NewsCover(cover: cover)).toList()
+            ),
+          ),
+          NewsInfo(data: item),
+        ],
+      ),
+    );
+  }
+
+  Widget _listViewStyle3(Data item) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          NewsTitle(
+            title: item.title,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0.0, 10.0, 0.0, 12.0),
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                NewsCover(
+                  cover: item.cover[0],
+                  width: 404.0,
+                  height: 227.0,
+                ),
+                Container(
+                  width: 74.0,
+                  height: 74.0,
+                  decoration: BoxDecoration(
+                    color: Color.fromRGBO(0, 0, 0, 0.3),
+                    borderRadius: BorderRadius.all(Radius.circular(37.0))
+                  ),
+                ),
+                Icon(Icons.play_arrow, color: Color.fromARGB(255, 255, 221, 0), size: 42.0,)
+              ],
+            ),
+          ),
+          NewsInfo(data: item),
+        ],
       ),
     );
   }

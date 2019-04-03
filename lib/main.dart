@@ -14,6 +14,9 @@ class MyApp extends StatelessWidget {
         primaryColor: Colors.white,
         accentColor: Color.fromARGB(255, 255, 221, 0),
         cursorColor: Color.fromARGB(255, 255, 221, 0),
+        buttonTheme: ButtonThemeData(
+          buttonColor: Color.fromARGB(255, 255, 221, 0)
+        ),
       ),
       home: HomePage(),
     );

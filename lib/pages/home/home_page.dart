@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import './recommend.dart';
+import 'package:yynews/event/bus.dart';
+import 'package:yynews/pages/home/recommend.dart';
+import 'package:yynews/pages/home/topic.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -7,9 +9,16 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
-  final List<Text> tabs = <Text>[
-    Text('推荐'),
-    Text('分类'),
+  List<Tab> tabs = <Tab>[
+    Tab(text: '推荐'),
+    Tab(text: '主播趣闻'),
+    Tab(text: '神壕八卦'),
+    Tab(text: '春季头条'),
+    Tab(text: '周星盘点'),
+    Tab(text: '公会动态'),
+    Tab(text: '萌新求罩'),
+    Tab(text: '交友'),
+    Tab(text: '户外'),
   ];
 
   TabController _tabController;
@@ -18,6 +27,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void initState() {
     super.initState();
     _tabController = new TabController(vsync: this, length: tabs.length);
+    bus.on('jumpTo', (index) {
+      _tabController.animateTo(index);
+    });
   }
 
   @override
@@ -29,22 +41,25 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0.0,
-        centerTitle: true,
-        title: TabBar(
-          controller: _tabController,
-          tabs: tabs,
-          isScrollable: true,
-          indicatorColor: Color.fromARGB(255, 255, 221, 0),
-          indicatorSize: TabBarIndicatorSize.label,
-          labelColor: Colors.black,
-          labelStyle: TextStyle(
-            fontWeight: FontWeight.w900,
-          ),
-          unselectedLabelStyle: TextStyle(
-            fontWeight: FontWeight.normal,
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(38.0),
+        child: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0.0,
+          centerTitle: true,
+          title: TabBar(
+            controller: _tabController,
+            tabs: tabs,
+            isScrollable: true,
+            indicatorColor: Color.fromARGB(255, 255, 221, 0),
+            indicatorSize: TabBarIndicatorSize.label,
+            labelColor: Colors.black,
+            labelStyle: TextStyle(
+              fontWeight: FontWeight.w900,
+            ),
+            unselectedLabelStyle: TextStyle(
+              fontWeight: FontWeight.normal,
+            ),
           ),
         ),
       ),
@@ -52,7 +67,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         controller: _tabController,
         children: <Widget>[
           Recommend(),
-          Center(child: Text('分类'),),
+          Topic(id: 19),
+          Topic(id: 152),
+          Topic(id: 392),
+          Topic(id: 349),
+          Topic(id: 351),
+          Topic(id: 21),
+          Topic(id: 384),
+          Topic(id: 385),
         ],
       ),
     );
